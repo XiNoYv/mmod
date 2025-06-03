@@ -1,0 +1,12 @@
+[package]
+name = "mmod"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.39", features = ["derive"] }
+anyhow = "1.0.98"
+zip = "4.0.0"
+serde = { version = "1.0.219", features = ["derive"] }
+toml = "0.8.22"
+semver = "1.0.26"
