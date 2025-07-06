@@ -2,10 +2,9 @@ mod jar;
 mod r#mod;
 
 use std::path::{Path, PathBuf};
-use std::io::Read;
 use clap::Parser;
 use anyhow::Result;
-use crate::r#mod::{ModMetadata, parse_forge_mod_contents, analyze_dependencies};
+use crate::r#mod::{ModMetadata, parse_forge_mod_contents, parse_fabric_mod_contents, analyze_dependencies};
 
 #[derive(Parser)]
 #[command(name = "Minecraft MODs Dependency Analyzer")]
@@ -47,20 +46,16 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parse_mod_file(path: &Path) -> Result<ModMetadata> {
+fn parse_mod_file(path: &Path) -> Result<Vec<ModMetadata>> {
     let file_name = path.file_name().unwrap().to_string_lossy().into_owned();
 
     let mut archive = jar::open_jar_file(path)?;
 
-    if let Ok(mut file) = archive.by_name("fabric.mod.json") {
-        Err("Not Implemented").unwrap_or_else(|_| {
-            //panic!("Fabric mod parsing not implemented for file: {}", file_name);
-        });
+    if archive.by_name("fabric.mod.json").is_ok() {
+        return Ok(vec![parse_fabric_mod_contents(&mut archive, &file_name)?]);
     }
-    if let Ok(mut file) = archive.by_name("META-INF/mods.toml") {
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-        return parse_forge_mod_contents(&contents, &file_name);
+    if archive.by_name("META-INF/mods.toml").is_ok() {
+        return parse_forge_mod_contents(&mut archive, &file_name);
     }
 
     Err(anyhow::anyhow!(
@@ -73,8 +68,7 @@ fn load_mods_from_dir(dir: &Path) -> Result<Vec<ModMetadata>> {
     let mut mods = Vec::new();
 
     for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
+        let path = entry?.path();
 
         if path.is_file() && path.extension().map_or(false, |ext| ext == "jar") {
             let file_name = path.file_name()
@@ -82,7 +76,7 @@ fn load_mods_from_dir(dir: &Path) -> Result<Vec<ModMetadata>> {
                 .unwrap_or("unknown.jar");
 
             match parse_mod_file(&path) {
-                Ok(mod_data) => mods.push(mod_data),
+                Ok(mod_data_vec) => mods.extend(mod_data_vec),
                 Err(e) => eprintln!("Skipping {}: {}", file_name, e),
             }
         }
