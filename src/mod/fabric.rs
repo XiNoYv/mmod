@@ -145,10 +145,12 @@ mod tests {
         }"#;
         let file_name = "fabric.mod.json".to_string();
         let json: FabricMod = serde_json::from_str(json_content)
-            .with_context(|| format!("Failed to parse Fabric fabric.mod.json from {}", file_name))?;
+            .with_context(|| format!("Failed to parse Fabric fabric.mod.json from {}", file_name))
+            .unwrap();
 
         let mut metadata = ModMetadata::try_from(&json)
-            .with_context(|| format!("Failed to convert Fabric fabric.mod.json to metadata for {}", file_name))?;
+            .with_context(|| format!("Failed to convert Fabric fabric.mod.json to metadata for {}", file_name))
+            .unwrap();
 
         metadata.file_name = file_name.clone();
 
@@ -171,10 +173,12 @@ mod tests {
         }"#;
         let file_name = "fabric.mod.json".to_string();
         let json: FabricMod = serde_json::from_str(json_content)
-            .with_context(|| format!("Failed to parse Fabric fabric.mod.json from {}", file_name))?;
+            .with_context(|| format!("Failed to parse Fabric fabric.mod.json from {}", file_name))
+            .unwrap();
 
         let mut metadata = ModMetadata::try_from(&json)
-            .with_context(|| format!("Failed to convert Fabric fabric.mod.json to metadata for {}", file_name))?;
+            .with_context(|| format!("Failed to convert Fabric fabric.mod.json to metadata for {}", file_name))
+            .unwrap();
 
         metadata.file_name = file_name.clone();
 

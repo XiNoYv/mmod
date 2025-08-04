@@ -4,7 +4,7 @@ mod r#mod;
 use std::path::{Path, PathBuf};
 use clap::Parser;
 use anyhow::Result;
-use crate::r#mod::{ModMetadata, parse_forge_mod_contents, parse_fabric_mod_contents, analyze_dependencies};
+use crate::r#mod::{ModMetadata, parse_forge_mod_contents, parse_fabric_mod_contents, parse_neoforge_mod_contents, analyze_dependencies};
 
 #[derive(Parser)]
 #[command(name = "Minecraft MODs Dependency Analyzer")]
@@ -58,8 +58,13 @@ fn parse_mod_file(path: &Path) -> Result<Vec<ModMetadata>> {
         return parse_forge_mod_contents(&mut archive, &file_name);
     }
 
+    if archive.by_name("META-INF/neoforge.mods.toml").is_ok() {
+        return parse_neoforge_mod_contents(&mut archive, &file_name);
+    }
+
     Err(anyhow::anyhow!(
-        "Neither fabric.mod.json nor META-INF/mods.toml found in {}",
+        "Unsupported mod file format in '{}'. \
+        Expected one of: fabric.mod.json, META-INF/mods.toml (Forge), or META-INF/neoforge.mods.toml (NeoForge)",
         file_name
     ))
 }

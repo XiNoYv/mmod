@@ -1,9 +1,11 @@
 mod forge;
 mod fabric;
 mod version;
+mod neoforge;
 
 pub use forge::parse_forge_mod_contents;
 pub use fabric::parse_fabric_mod_contents;
+pub use neoforge::parse_neoforge_mod_contents;
 use crate::r#mod::version::VersionConstraint;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -111,7 +113,7 @@ pub fn analyze_dependencies(
 
     for (platform, platform_mods) in platform_groups {
         match platform {
-            Platform::Forge | Platform::Fabric => {
+            Platform::Forge | Platform::Fabric | Platform::NeoForge => {
                 match resolve_dependencies(platform_mods) {
                     Ok(resolved) => result.extend(resolved.into_iter().cloned()),
                     Err(errors) => all_errors.extend(errors.0),
@@ -178,7 +180,7 @@ fn resolve_mod<'a>(
     unresolved.insert(mod_.mod_id.clone());
 
     for dep in &mod_.dependencies {
-        if matches!(dep.mod_id.as_str(), "minecraft" | "forge" | "fabricloader" | "fabric-resource-loader-v0" | "java") {
+        if matches!(dep.mod_id.as_str(), "minecraft" | "forge" | "fabricloader" | "fabric-resource-loader-v0" | "java" | "neoforge") {
             continue;
         }
 
@@ -215,7 +217,7 @@ fn resolve_mod<'a>(
                     dep_mod.file_name.clone(),
                     dep_mod.version.clone(),
                 ));
-                continue; // Skip this dependency if its own version is invalid
+                continue;
             }
         };
 
@@ -231,11 +233,10 @@ fn resolve_mod<'a>(
                     }
                     Err(_) => {
                         errors.push(DependencyError::InvalidVersionFormat(
-                            dep.mod_id.clone(), // This is the dependency's mod_id
-                            mod_.file_name.clone(), // This is the mod that has the dependency
+                            dep.mod_id.clone(),
+                            mod_.file_name.clone(),
                             required_version_str.clone(),
                         ));
-                        // Do not set version_matched to true, as the constraint itself is invalid
                     }
                 }
             },
@@ -250,11 +251,10 @@ fn resolve_mod<'a>(
                         }
                         Err(_) => {
                             errors.push(DependencyError::InvalidVersionFormat(
-                                dep.mod_id.clone(), // This is the dependency's mod_id
-                                mod_.file_name.clone(), // This is the mod that has the dependency
+                                dep.mod_id.clone(),
+                                mod_.file_name.clone(),
                                 req_ver_str.clone(),
                             ));
-                            // Continue to next constraint, don't break, as other constraints might be valid
                         }
                     }
                 }

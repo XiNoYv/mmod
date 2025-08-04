@@ -49,7 +49,13 @@ fn parse_bound(s: &str, inclusive: bool) -> Result<VersionBound, String> {
     if s.is_empty() {
         Ok(VersionBound::Unbounded)
     } else {
-        let version = Version::parse(s)
+        let normalized = match s.split('.').count() {
+            1 => format!("{}.0.0", s),
+            2 => format!("{}.0", s),
+            _ => s.to_string(),
+        };
+        
+        let version = Version::parse(&normalized)
             .map_err(|e| format!("Invalid version: {}", e))?;
 
         if inclusive {
@@ -200,5 +206,24 @@ mod tests {
     fn test_parse_version_constraint_invalid_format() {
         let result: Result<VersionConstraint, _> = "invalid-version".parse();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_simple_version_normalization() {
+        assert_eq!(
+            parse_bound("0", true).unwrap(),
+            VersionBound::Inclusive(Version::parse("0.0.0").unwrap())
+        );
+        assert_eq!(
+            parse_bound("0.1", false).unwrap(),
+            VersionBound::Exclusive(Version::parse("0.1.0").unwrap())
+        );
+        assert_eq!(
+            parse_bound("1.1.1", true).unwrap(),
+            VersionBound::Inclusive(Version::parse("1.1.1").unwrap())
+        );
+
+        assert!(parse_bound("1.2.3.4", true).is_err());
+        assert!(parse_bound("", true).is_ok());
     }
 }

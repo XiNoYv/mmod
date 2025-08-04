@@ -4,41 +4,50 @@ use anyhow::{Context, Result};
 use zip::ZipArchive;
 use std::io::Read;
 use crate::r#mod::{DependencyVersionRange, ModDependency, ModMetadata, Platform};
+use super::forge::{Authors, parse_authors};
 
-// https://docs.minecraftforge.net/en/latest/gettingstarted/modfiles/#modstoml
+// https://docs.neoforged.net/docs/gettingstarted/modfiles#neoforgemodstoml
 #[derive(Debug, Deserialize)]
-pub struct ForgeMod {
+pub struct NeoForgeMod {
     /// The language loader used by the mod(s).
     /// Can be used to support alternative language structures,
     /// such as Kotlin objects for the main file,
     /// or different methods of determining the entrypoint,
     /// such as an interface or method.
-    /// Forge provides the Java loader `javafml`
-    /// and low/no code loader `lowcodefml`.
+    /// NeoForge provides the Java loader `javafml`.
     #[serde(rename = "modLoader")]
     pub mod_loader: String,
     /// The acceptable version range of the language loader,
     /// expressed as a Maven Version Range.
-    /// For `javafml` and `lowcodefml`,
-    /// the version is the major version of the Forge version.
+    /// For `javafml`, this is currently version 1.
+    /// If no version is specified,then any version of the mod loader can be used.
     #[serde(rename = "loaderVersion")]
     pub loader_version: String,
     /// The license the mod(s) in this JAR are provided under.
     #[serde(rename = "license")]
-    pub license: Option<String>,
-    /// A URL representing the place to report and track issues with the mod(s).
-    #[serde(rename = "issueTrackerURL")]
-    pub issue_tracker_url: Option<String>,
+    pub license: String,
     /// When `true`, the mod(s)’s resources will be displayed as
     /// a separate resource pack on the ‘Resource Packs’ menu,
     /// rather than being combined with the `Mod resources` pack.
     #[serde(rename = "showAsResourcePack")]
     pub show_as_resource_pack: Option<bool>,
-    /// Weather the mod is only needed on client side or not.
-    #[serde(rename = "clientSideOnly")]
-    pub client_side_only: Option<bool>,
+    /// When `true`, the mod(s)’s data file will be displayed as
+    /// a separate data pack on the ‘Data Packs’ menu,
+    /// rather than being combined with the `Mod Data` pack.
+    #[serde(rename = "showAsDataPack")]
+    pub show_as_data_pack: Option<bool>,
+    /// An array of services your mod uses.
+    /// This is consumed as part of the created module for the mod
+    /// from NeoForge's implementation of the Java Platform Module System.
+    pub services: Option<Vec<String>>,
+    /// A table of substitution properties.
+    /// This is used by `StringSubstitutor` to replace `${file.<key>}` with its corresponding value.
+    // pub properties,
     /// Mod-specific properties are tied to the specified mod using the `[[mods]]` header.
     /// This is an array of tables;
+    /// A URL representing the place to report and track issues with the mod(s).
+    #[serde(rename = "issueTrackerURL")]
+    pub issue_tracker_url: Option<String>,
     /// all key/value properties will be attached to that mod until the next header.
     #[serde(rename = "mods")]
     pub mods: Vec<ModEntry>,
@@ -55,8 +64,10 @@ pub struct ModEntry {
     #[serde(rename = "modId")]
     pub mod_id: String,
     /// An override namespace for the mod.
-    #[serde(rename = "namespace")]
-    pub namespace: Option<String>,
+    /// Must also be a valid mod ID, but may additionally include dots or dashes.
+    /// Currently unused.
+    // #[serde(rename = "namespace")]
+    // pub namespace: Option<String>,
     /// The version of the mod, preferably in a variation of Maven versioning.
     /// When set to `${file.jarVersion}`, it will be replaced with the value of the
     /// `Implementation-Version` property in the JAR’s manifest
@@ -71,17 +82,26 @@ pub struct ModEntry {
     #[serde(rename = "description")]
     pub description: Option<String>,
     /// The name and extension of an image file used on the mods list screen.
-    /// The logo must be in the root of the JAR or directly in the root of the source set
-    /// (e.g., `src/main/resources` for the main source set).
+    /// The location must be an absolute path starting from the root of the JAR or source set
+    /// (e.g. ·src/main/resources` for the main source set).
+    /// Valid filename characters are lowercase letters (a-z), digits (0-9), slashes, (/),
+    /// underscores (_), periods (.) and hyphens (-). The complete character set is [a-z0-9_-.].
     #[serde(rename = "logoFile")]
     pub logo_file: Option<String>,
     /// Whether to use `GL_LINEAR*` (true) or `GL_NEAREST*` (false) to render the logoFile.
     #[serde(rename = "logoBlur")]
     pub logo_blur: Option<bool>,
-    /// A URL to a JSON used by the [update checker](https://docs.minecraftforge.net/en/latest/misc/updatechecker/)
+    /// A URL to a JSON used by the [update checker](https://docs.neoforged.net/docs/misc/updatechecker/)
     /// to make sure the mod you are playing is the latest version.
     #[serde(rename = "updateJSONURL")]
     pub update_json_url: Option<String>,
+    // pub features,
+    /// A table of key/values associated with this mod.
+    /// Unused by NeoForge, but is mainly for use by mods.
+    // pub modproperties,
+    /// A URL to the download page of the mod. Currently unused.
+    // #[serde(rename = "modUrl")]
+    // pub mod_url: Option<String>,
     /// Credits and acknowledges for the mod shown on the mod list screen.
     #[serde(rename = "credits")]
     pub credits: Option<String>,
@@ -91,16 +111,12 @@ pub struct ModEntry {
     /// A URL to the display page of the mod shown on the mod list screen.
     #[serde(rename = "displayURL")]
     pub display_url: Option<String>,
-    /// See [sides](https://docs.minecraftforge.net/en/latest/concepts/sides/#writing-one-sided-mods).
-    #[serde(rename = "displayTest")]
-    pub display_test: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Authors {
-    String(String),
-    Array(Vec<String>),
+    /// The file path of a JSON file used for enum extension
+    #[serde(rename = "enumExtensions")]
+    pub enum_extensions: Option<String>,
+    /// The file path of a JSON file used for feature flags
+    #[serde(rename = "featureFlags")]
+    pub feature_flags: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,8 +131,18 @@ pub struct DependencyEntry {
     /// The identifier of the mod added as a dependency.
     #[serde(rename = "modId")]
     pub mod_id: String,
-    /// Whether the game should crash when this dependency is not met.
-    pub mandatory: bool,
+    /// Specifies the nature of this dependency:
+    /// `"required"` is the default and prevents the mod from loading if this dependency is missing;
+    /// `"optional"` will not prevent the mod from loading if the dependency is missing,
+    /// but still validates that the dependency is compatible;
+    /// `"incompatible"` prevents the mod from loading if this dependency is present;
+    /// `"discouraged"` still allows the mod to load if the dependency is present, but presents a warning to the user.
+    #[serde(rename = "type")]
+    pub r#type: String,
+    /// An optional user-facing message to describe why this dependency is required,
+    /// or why it is incompatible.
+    #[serde(rename = "reason")]
+    pub reason: Option<String>,
     /// The acceptable version range of the language loader,
     /// expressed as a Maven Version Range.
     /// An empty string matches any version.
@@ -127,15 +153,18 @@ pub struct DependencyEntry {
     pub ordering: String,
     /// The physical side the dependency must be present on: "CLIENT", "SERVER", or "BOTH".
     pub side: String,
+    // A URL to the download page of the dependency. Currently unused.
+    // #[serde(rename = "referralUrl")]
+    // pub referral_url: Option<String>,
 }
 
-pub fn parse_forge_mod_contents(jar_file: &mut ZipArchive<File>, file_name: &String) -> Result<Vec<ModMetadata>> {
-    let mut file = jar_file.by_name("META-INF/mods.toml")?;
+pub fn parse_neoforge_mod_contents(jar_file: &mut ZipArchive<File>, file_name: &String) -> Result<Vec<ModMetadata>> {
+    let mut file = jar_file.by_name("META-INF/neoforge.mods.toml")?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     drop(file);
-    let toml: ForgeMod = toml::from_str(contents.as_str())
-        .with_context(|| format!("Failed to parse Forge mods.toml from {}", file_name))?;
+    let toml: NeoForgeMod = toml::from_str(contents.as_str())
+        .with_context(|| format!("Failed to parse NeoForge mods.toml from {}", file_name))?;
 
     let mut all_metadata = Vec::new();
 
@@ -160,8 +189,8 @@ pub fn parse_forge_mod_contents(jar_file: &mut ZipArchive<File>, file_name: &Str
             name: mod_entry.display_name.clone(),
             description: mod_entry.description.clone(),
             authors: parse_authors(&mod_entry.authors),
-            platform: Platform::Forge,
-            dependencies: parse_forge_dependencies(&toml),
+            platform: Platform::NeoForge,
+            dependencies: parse_neoforge_dependencies(&toml),
             file_name: file_name.clone(),
         };
         all_metadata.push(metadata);
@@ -170,18 +199,7 @@ pub fn parse_forge_mod_contents(jar_file: &mut ZipArchive<File>, file_name: &Str
     Ok(all_metadata)
 }
 
-pub fn parse_authors(authors: &Option<Authors>) -> Vec<String> {
-    match authors {
-        Some(Authors::String(s)) => s.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
-        Some(Authors::Array(arr)) => arr.clone(),
-        None => Vec::new(),
-    }
-}
-
-fn parse_forge_dependencies(toml: &ForgeMod) -> Vec<ModDependency> {
+fn parse_neoforge_dependencies(toml: &NeoForgeMod) -> Vec<ModDependency> {
     let Some(deps) = &toml.dependencies else { return Vec::new() };
 
     let entries: Vec<_> = match deps {
@@ -192,7 +210,7 @@ fn parse_forge_dependencies(toml: &ForgeMod) -> Vec<ModDependency> {
     entries.iter().map(|entry| ModDependency {
         mod_id: entry.mod_id.clone(),
         version_range: DependencyVersionRange::Single(entry.version_range.clone()),
-        mandatory: entry.mandatory,
+        mandatory: entry.r#type == "required"
     }).collect()
 }
 
@@ -204,43 +222,39 @@ mod tests {
     fn test_parse_forge_mod_contents() {
         let toml_content = r#"
 modLoader="javafml"
-loaderVersion="[52,)"
-
-license="All Rights Reserved"
-issueTrackerURL="https://github.com/MinecraftForge/MinecraftForge/issues"
-showAsResourcePack=false
-clientSideOnly=false
+loaderVersion="[1,)"
+license="${mod_license}"
+issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/"
 
 [[mods]]
-  modId="examplemod"
-  version="1.0.0.0"
-  displayName="Example Mod"
-  updateJSONURL="https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
-  displayURL="https://minecraftforge.net"
-  logoFile="logo.png"
-  credits="I'd like to thank my mother and father."
-  authors="Author"
-  description='''
-  Lets you craft dirt into diamonds. This is a traditional mod that has existed for eons. It is ancient. The holy Notch created it. Jeb rainbowfied it. Dinnerbone made it upside down. Etc.
-  '''
-  displayTest="MATCH_VERSION"
-
+modId="examplemod"
+version="1.8.2"
+displayName="Example Mod"
+displayURL="https://minecraftforge.net"
+logoFile="icon.png"
+authors="Author"
+description='''
+Lets you craft dirt into diamonds. This is a traditional mod that has existed for eons. It is ancient. The holy Notch created it. Jeb rainbowfied it. Dinnerbone made it upside down. Etc.
+'''
+displayTest="IGNORE_ALL_VERSION"
+[[mixins]]
+config="entityculling.mixins.json"
 [[dependencies.examplemod]]
-  modId="forge"
-  mandatory=true
-  versionRange="[52,)"
-  ordering="NONE"
-  side="BOTH"
-
+    modId="minecraft"
+    type="required"
+    versionRange="[1.21]"
+    ordering="NONE"
+    side="BOTH"
 [[dependencies.examplemod]]
-  modId="minecraft"
-  mandatory=true
-  versionRange="[1.21.1,)"
-  ordering="NONE"
-  side="BOTH"
+    modId="neoforge"
+    type="required"
+    versionRange="[20.2,)"
+    ordering="NONE"
+    side="BOTH"
+
 "#;
         let file_name = "test.toml".to_string();
-        let toml: ForgeMod = toml::from_str(toml_content)
+        let toml: NeoForgeMod = toml::from_str(toml_content)
             .with_context(|| format!("Failed to parse Forge mods.toml from {}", file_name))
             .unwrap();
 
@@ -254,7 +268,7 @@ clientSideOnly=false
                 description: mod_entry.description.clone(),
                 authors: parse_authors(&mod_entry.authors),
                 platform: Platform::Forge,
-                dependencies: parse_forge_dependencies(&toml),
+                dependencies: parse_neoforge_dependencies(&toml),
                 file_name: file_name.clone(),
             };
             all_metadata.push(metadata);
@@ -263,6 +277,6 @@ clientSideOnly=false
         assert_eq!(all_metadata.len(), 1);
         let first_mod = &all_metadata[0];
         assert_eq!(first_mod.mod_id, "examplemod");
-        assert_eq!(first_mod.version, "1.0.0.0");
+        assert_eq!(first_mod.version, "1.8.2");
     }
 }
